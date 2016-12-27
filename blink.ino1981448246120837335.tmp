@@ -1,0 +1,126 @@
+#include "NfcContainer.h"
+#include <Arduino.h>
+#include <SPI.h>
+#include <PN532_SPI.h>
+#include <PN532.h>
+#include <snep.h>
+#include <NfcAdapter.h>
+#include <EEPROM.h>
+#include "KeyManager.h"
+
+
+
+
+  PN532_SPI pn532spi(SPI, 10);
+  SNEP nfc(pn532spi);
+  uint8_t ndefBuf[255];
+  KeyManager keyManager;
+  boolean guestSaved = false;
+  
+  const String MASTER_KEY = "MASTER_KEY";
+  const String NFC_TAG_RECIEVED_MASTER_INITALIZATION = "MASTER_INITALIZATION";
+  const String NFC_TAG_RECIEVED_WIFI_INITAIZATION = "WIFI_INITALIZATION";
+  const String NFC_TAG_RECIEVED_DOOR_OPENING = "DOOR_OPENING";
+  
+  const String NFC_TAG_SENT_MASTER_CHECK = "MASTER_CHECK";
+  const String NFC_TAG_SENT_WIFI_CHECK = "WIFI_CHECK";
+  const String NFC_TAG_SENT_DOOR_CHECK = "DOOR_CHECK";
+  
+  const String NFC_TAG_SUCCES = "SUCCES";
+  const String NFC_TAG_FALIURE = "FALIURE";
+
+void setup() {
+  Serial.begin(9600); 
+}
+
+void loop() {
+    //   Serial.println("Waiting for message from Peer");
+    // int msgSize = nfc.read(ndefBuf, sizeof(ndefBuf));
+    // if (msgSize > 0) {
+    //     NdefMessage msg  = NdefMessage(ndefBuf, msgSize);
+    //     msg.print();
+    //     Serial.println("\nSuccess");
+    // } else {
+    //     Serial.println("Failed");
+    // }
+    // delay(3000);
+    
+   // put your main code here, to run repeatedly:
+
+    Serial.println("Waiting for message from Peer");
+    int msgSize = nfc.read(ndefBuf, sizeof(ndefBuf));
+    if (msgSize > 0) {
+        NdefMessage msg  = NdefMessage(ndefBuf, msgSize);
+        msg.print();
+        Serial.println("\nSuccess");
+        detectFunction(msg);
+    } else {
+        Serial.println("Failed");
+    }
+    delay(3000);
+}
+
+void detectFunction(NdefMessage message){
+    String nfcMessageType = getStringFromRecord(message.getRecord(0));
+    Serial.println(nfcMessageType);
+    if (nfcMessageType.equals(NFC_TAG_RECIEVED_MASTER_INITALIZATION)){
+      Serial.println("MASTER_INITALIZATION");
+        initMaster(message);
+    }else if(nfcMessageType.equals(NFC_TAG_RECIEVED_WIFI_INITAIZATION)){
+        checkWiFi(message);
+    }else if(nfcMessageType.equals(NFC_TAG_RECIEVED_DOOR_OPENING)){
+        Guest guest((byte)0,getStringFromRecord(message.getRecord(1)),getStringFromRecord(message.getRecord(2));
+        if(!guestSaved){
+        addGuest(guest);
+        guestSaved = true;
+        }else{
+        checkOpenKey(guest);
+        }
+    }
+  }
+
+
+
+
+void initMaster(NdefMessage message){
+  if (recievedKey.equals(MASTER_KEY)){
+    Serial.println(NFC_TAG_RECIEVED_MASTER_INITALIZATION+NFC_TAG_SUCCES);
+    sendNfcTag(NFC_TAG_SENT_MASTER_CHECK,NFC_TAG_SUCCES);
+  }else{
+    Serial.println(NFC_TAG_RECIEVED_MASTER_INITALIZATION+NFC_TAG_FALIURE);
+    sendNfcTag(NFC_TAG_SENT_MASTER_CHECK,NFC_TAG_FALIURE);
+  }
+}
+
+void checkWiFi(String ssid, String password){
+  //todo Wifi
+}
+
+
+boolean checkOpenKey(Guest checkGuest){
+    boolean check = false;
+    Serial.println("checkGuest:");  
+    Serial.println(checkGuest.getId());
+    Serial.println(checkGuest.getName());
+    Serial.println(checkGuest.getKey());
+    
+    Guest savedGuest = keyManager.getGuest(0);
+    check = Guest::compareGuests(checkGuest,savedGuest);
+    Serial.println("savedGuest");  
+    Serial.println(savedGuest.getName());  
+    Serial.println(savedGuest.getKey());  
+    Serial.println(savedGuest.getId());  
+  if(check){
+      Serial.println("comapre succes");
+  }else{
+      Serial.println("comapre faliure");
+  }
+  return check;
+}
+
+Guest addGuest(Guest guest){
+  guest = keyManager.addGuest(guest);
+  return guest;
+}
+
+
