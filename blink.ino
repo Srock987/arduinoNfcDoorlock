@@ -12,16 +12,15 @@
 #include "WiFiCredentials.h"
 
 
-  SoftwareSerial mySerial(11, 12);
+  SoftwareSerial mySerial(8, 9);
   PN532_SPI pn532spi(SPI, 10);
   SNEP nfc(pn532spi);
-  uint8_t ndefBuf[255];
+  uint8_t ndefBuf[128];
   KeyManager keyManager;
   boolean guestSaved = false;
-  boolean credentialsSaved = false;
   
   const String MASTER_KEY = "MASTER_KEY";
-  const String NFC_TAG_RECIEVED_MASTER_INITALIZATION = "MASTER_INITALIZATION";
+  const String NFC_TAG_RECIEVED_MASTER_INITALIZATION = "MST_INIT";
   const String NFC_TAG_RECIEVED_WIFI_INITAIZATION = "WIFI_INITALIZATION";
   const String NFC_TAG_RECIEVED_DOOR_OPENING = "DOOR_OPENING";
   
@@ -34,20 +33,47 @@
 
   const String WIFI_TAG_GUESTLIST_REQUEST = "WIFI_TAG_GUESTLIST_REQUEST";
   const String WIFI_TAG_ADD_GUEST_REQUEST = "WIFI_TAG_ADD_GUEST_REQUEST";
+  const String WIFI_TAG_DELETE_GUEST_REQUEST = "WIFI_TAG_DELETE_GUEST_REQUEST";
+  const String WIFI_CONFIGURATION_TAG = "WIFI_CONFIGURATION_TAG";
+  
 
 void setup() {
   Serial.begin(9600); 
   mySerial.begin(9600);
+  //configureWiFi();
 }
 
 void loop() {
-    //readNfc();
+    readNfc();   
+    delay(1000);
     handleSerialRequest();
-    //delay(500);
+}
+
+void configureWiFi(){
+    WiFiCredentials loadedCredentials("","");
+    loadedCredentials.loadCredentials();
+    if(loadedCredentials.getSsid().length()!=0&&loadedCredentials.getPassword().length()!=0){
+      char ssidChar[loadedCredentials.getSsid().length()+1];
+      char passChar[loadedCredentials.getPassword().length()+1];
+      loadedCredentials.getSsid().toCharArray(ssidChar,loadedCredentials.getSsid().length()+1);
+      loadedCredentials.getPassword().toCharArray(passChar,loadedCredentials.getPassword().length()+1);    
+      mySerial.write("WIFI_CONFIGURATION_TAG");
+      mySerial.write("\n");
+      mySerial.write(ssidChar);
+      mySerial.write("\n");
+      mySerial.write(passChar);
+      mySerial.write("\n");
+      mySerial.write("\r");
+      Serial.println("Credentials sent:");
+      Serial.println(ssidChar);
+      Serial.println(passChar);
+    }else {
+      Serial.println("Credentials empty");
+    }
 }
 
 void readNfc(){
-      int msgSize = nfc.read(ndefBuf, sizeof(ndefBuf));
+    int msgSize = nfc.read(ndefBuf, sizeof(ndefBuf),500);
     if (msgSize > 0) {
         NdefMessage msg  = NdefMessage(ndefBuf, msgSize);
         msg.print();
@@ -64,7 +90,6 @@ void handleSerialRequest(){
 }
 
 void writeJsonResponse(String request,SoftwareSerial mySerial){
-
   if(request.equals(WIFI_TAG_GUESTLIST_REQUEST)){
     int guestCount = keyManager.guestCount();
     Guest guestArray[guestCount];
@@ -83,49 +108,47 @@ void writeJsonResponse(String request,SoftwareSerial mySerial){
       encodeGuest(guestArray[i], object);
     }
     rootArray.printTo(mySerial);
-    rootArray.printTo(Serial);
     mySerial.write("\r");
-  }else{
-    String test = request.substring(0,request.indexOf("\n"));
-    Serial.println(test);
-  if(request.substring(0,request.indexOf("\n")).equals(WIFI_TAG_ADD_GUEST_REQUEST)){
+  }else if(request.substring(0,request.indexOf("\n")).equals(WIFI_TAG_ADD_GUEST_REQUEST)){
     String test1 = request.substring(request.indexOf("\n"));
-    Serial.println(test1);
-    Guest decodedGuest = decodeGuest(request.substring(request.indexOf("\n")));
+    Guest decodedGuest = decodeGuest(test1);
     decodedGuest = keyManager.addGuest(decodedGuest);
     StaticJsonBuffer<200> jsonBuffer;
-    JsonObject& response = jsonBuffer.createObject();
-    encodeGuest(decodedGuest, response);
-    response.printTo(mySerial);
-    response.printTo(Serial);
+    JsonObject& response1 = jsonBuffer.createObject();
+    encodeGuest(decodedGuest, response1);
+    response1.printTo(mySerial);
     mySerial.write("\r");
-  }
+  }else if(request.substring(0,request.indexOf("\n")).equals(WIFI_TAG_DELETE_GUEST_REQUEST)){
+    String test1 = request.substring(request.indexOf("\n"));
+    Guest decodedGuest = decodeGuest(test1);
+    if(keyManager.guestExists(decodedGuest.getId())){
+      if(keyManager.removeGuest(decodedGuest.getId())){
+        StaticJsonBuffer<200> jsonBuffer;
+        JsonObject& response2 = jsonBuffer.createObject();
+        encodeGuest(decodedGuest, response2);
+        response2.printTo(mySerial);
+        mySerial.write("\r");
+      }
+    }
   }
 }
 
 JsonObject& encodeGuest(Guest guest, JsonObject& object){
-   Serial.println("SERIALIZATION\n{ Encoded guest:");
-   Serial.println(guest.getId());
    object["id"] = guest.getId();
-   Serial.println(guest.getName());
    object["name"] = guest.getName();
-   Serial.println(guest.getKey());
    object["key"] = guest.getKey();
-   object.printTo(Serial);
-     Serial.println("}\nSERIALIZATION");
    return object;
 }
 
-Guest decodeGuest(String body){
+Guest decodeGuest(String &body){
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& object = jsonBuffer.parseObject(body);
   Guest decodedGuest(object["id"],object["name"],object["key"]);
   return decodedGuest;
 }
 
-void detectFunction(NdefMessage message){
+void detectFunction(NdefMessage& message){
     String nfcMessageType =  EepromUtil::getStringFromRecord(message.getRecord(0));
-    Serial.println(nfcMessageType);
     if (nfcMessageType.equals(NFC_TAG_RECIEVED_MASTER_INITALIZATION)){
         initMaster(message);
     }else if(nfcMessageType.equals(NFC_TAG_RECIEVED_WIFI_INITAIZATION)){
@@ -142,25 +165,12 @@ void detectFunction(NdefMessage message){
   }
 
 
-void initMaster(NdefMessage message){
+void initMaster(NdefMessage& message){
   if(message.getRecordCount()==4){
   if (EepromUtil::getStringFromRecord(message.getRecord(1)).equals(MASTER_KEY)){
-    Serial.println("Recieved Credentials:");
     WiFiCredentials credentials(EepromUtil::getStringFromRecord(message.getRecord(2)),EepromUtil::getStringFromRecord(message.getRecord(3)));
-    Serial.println("Recieved Credentials:");
-    Serial.println(credentials.getSsid());
-    Serial.println(credentials.getPassword());
-    if(!credentialsSaved){
     credentials.saveCredentials();
-    credentialsSaved=true;
-    }else{
-    WiFiCredentials loadedCredentials("","");
-    loadedCredentials.loadCredentials();
-    Serial.println("Loaded Credentials:");
-    Serial.println(loadedCredentials.getSsid());
-    Serial.println(loadedCredentials.getPassword());
-    }
-    Serial.println("Credentials");
+    configureWiFi();
   }else{
     Serial.println("Wrong master password");
   }
@@ -180,7 +190,6 @@ boolean checkOpenKey(Guest checkGuest){
     Serial.println(checkGuest.getId());
     Serial.println(checkGuest.getName());
     Serial.println(checkGuest.getKey());
-    
     Guest savedGuest = keyManager.getGuest(0);
     check = Guest::compareGuests(checkGuest,savedGuest);
     Serial.println("savedGuest");  
