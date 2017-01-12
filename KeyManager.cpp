@@ -7,14 +7,18 @@
 #define LIST_BYTE_INDEX 1014
 
 KeyManager::KeyManager(void){
-  Serial.begin(9600); 
 	initIndexes();
 }
 
 void KeyManager::initIndexes(void){
-		EepromUtil::eeprom_read_bytes(LIST_BYTE_INDEX,entries,ARRAY_SIZE);
-    int size = sizeof(entries)/sizeof(entries[0]);
-    Serial.println(size); 
+  for(int i = 0 ; i < ARRAY_SIZE ; i++){
+    byte readByte = EEPROM.read(LIST_BYTE_INDEX+i);
+    if(readByte == 1){ 
+      guestIdArray[i]=readByte;
+    }else{
+      guestIdArray[i]=0;
+    }
+  }
 }
 
 Guest KeyManager::addGuest(Guest guest){ 
@@ -22,40 +26,29 @@ Guest KeyManager::addGuest(Guest guest){
   char saveName[STRING_SPACE]={0};
   strcpy(saveKey, guest.getKey().c_str());
   strcpy(saveName, guest.getName().c_str());
-	for (int i = 0; i < sizeof(entries)/sizeof(entries[0]); ++i)
+	for (int i = 0; i < ARRAY_SIZE; ++i)
 		{
-      Serial.println(i); 
-			if (entries[i]==0)
+			if (guestIdArray[i]==0)
 			{
 				if (EepromUtil::eeprom_write_string(i * 2 *STRING_SPACE, &saveKey[0]) &&
 				EepromUtil::eeprom_write_string((i * 2 + 1)* STRING_SPACE, &saveName[0]))
 				{
-          unsigned char a[1] = {1};
-					if(EepromUtil::eeprom_write_bytes(LIST_BYTE_INDEX+i,a,1))
-					{
-						entries[i]=1;
+            EEPROM.write(LIST_BYTE_INDEX+i, 1);
+						guestIdArray[i]=1;
 						guest.setId(i);
-            Serial.println("saved");  
-            delay(250);
-					}
-				}
+
+  				}
 
 				break;
 			}
 		}
-   Serial.println("savedGuest:");  
-   Serial.println(guest.getName());  
-   Serial.println(guest.getKey());  
-   Serial.println(guest.getId());  
 	return guest;
 }
 
 boolean KeyManager::removeGuest(byte id){
-	if(EepromUtil::eeprom_write_string(LIST_BYTE_INDEX+id,0)){
-			entries[id]=0;
+      EEPROM.write(LIST_BYTE_INDEX+id, 0);
+			guestIdArray[id]=0;
 			return true;
-	}
-	return false;
 }
 
 Guest KeyManager::getGuest(byte id){
@@ -63,16 +56,11 @@ Guest KeyManager::getGuest(byte id){
     char loadName[STRING_SPACE]={0};
     if(EepromUtil::eeprom_read_string( id * 2 * STRING_SPACE, &loadKey[0],STRING_SPACE ) &&
     EepromUtil::eeprom_read_string( (id * 2 + 1) * STRING_SPACE, &loadName[0], STRING_SPACE ))
-    {
-        Serial.println("loadSucces");  
-    }else{
-        Serial.println("loadFail");          
-    }
 		return Guest(id,loadName,loadKey);
 }
 
 boolean KeyManager::guestExists(byte id){
-		if (entries[id]==1){
+		if (guestIdArray[id]==1){
 			return true;
 		}
 		return false;
@@ -80,9 +68,9 @@ boolean KeyManager::guestExists(byte id){
 
 byte KeyManager::guestCount(){
 	byte count = 0;
-	for (int i = 0; i < sizeof(entries)/sizeof(entries[0]); ++i)
+	for (int i = 0; i < 10; ++i)
 	{
-		if (entries[i]==1)
+		if (guestIdArray[i]==1)
 		{
 			count++;
 		}

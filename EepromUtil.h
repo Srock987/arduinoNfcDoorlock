@@ -22,7 +22,8 @@ class EepromUtil {
     static boolean eeprom_read_string(int addr, char* buffer, int bufSize);
     static boolean eeprom_write_bytes(int startAddr, const byte* array,
                                       int numBytes);
-                                   
+    static void EEPROMWritelong(int address, long value);
+    static long EEPROMReadlong(long address);                        
   private:
     static boolean eeprom_is_addr_ok(int addr);
 };

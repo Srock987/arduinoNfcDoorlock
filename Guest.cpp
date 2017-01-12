@@ -1,10 +1,6 @@
 #include "Guest.h"
 #include "EepromUtil.h"
 
-
-
-
-
 Guest::Guest(byte aId,String aName, String aKey){
 id=aId;
 name=aName;

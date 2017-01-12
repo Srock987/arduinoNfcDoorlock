@@ -20,5 +20,5 @@ class KeyManager
 	  byte guestCount(void);
   private:
   	void initIndexes(void);
-  	byte entries[10];
+  	byte guestIdArray[10];
 };
